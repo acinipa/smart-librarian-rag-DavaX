@@ -15,14 +15,14 @@ CHROMA_PATH = Path("chroma")
 COLLECTION_NAME = "book_summaries"
 
 def parse_books_md(md_text: str) -> List[Dict[str, Any]]:
-    """Parsează fișierul markdown în înregistrări {id, title, text, metadata}."""
+    """Parse the markdown file into records {id, title, text, metadata}."""
     blocks = re.split(r"^##\s*Title:\s*", md_text, flags=re.MULTILINE)
     records: List[Dict[str, Any]] = []
     for block in blocks:
         block = block.strip()
         if not block:
             continue
-        # title: până la prima linie goală sau sfârșit
+        # title: up to the first empty line or end of block
         lines = block.splitlines()
         title = lines[0].strip()
         summary = "\n".join(lines[1:]).strip()
@@ -50,7 +50,7 @@ def get_or_create_collection(client: chromadb.PersistentClient):
     )
 
 def bootstrap_index() -> int:
-    """Citește data/book_summaries.md și (re)indexează dacă e golă colecția. Returnează numărul de înregistrări."""
+    """Read data/book_summaries.md and (re)index if the collection is empty. Returns the number of records."""
     client = get_client()
     col = get_or_create_collection(client)
     count = col.count()
@@ -58,7 +58,7 @@ def bootstrap_index() -> int:
         return count
 
     if not DATA_MD.exists():
-        raise FileNotFoundError(f"Nu găsesc {DATA_MD.resolve()}")
+        raise FileNotFoundError(f"Cannot find {DATA_MD.resolve()}")
 
     records = parse_books_md(DATA_MD.read_text(encoding="utf-8"))
     # upsert all
@@ -67,8 +67,9 @@ def bootstrap_index() -> int:
         documents=[r["text"] for r in records],
         metadatas=[r["metadata"] for r in records]
     )
-    # Chroma persistă automat în PersistentClient; apelul explicit la persist() nu este necesar
-    # dar este sigur în notebook-uri.
+    # Chroma automatically persists in PersistentClient;
+    # an explicit persist() call is not required,
+    # but is safer when running in notebooks.
     try:
         col.persist()
     except Exception:
@@ -82,7 +83,7 @@ class RAGEngine:
         self.col = get_or_create_collection(self.client)
 
     def search(self, query: str, k: int = 3) -> List[Dict[str, Any]]:
-        """Returnează top-k documente relevante (titlu + text)."""
+        """Return the top-k relevant documents (title + text)."""
         out = self.col.query(query_texts=[query], n_results=k)
         results = []
         docs = out.get("documents", [[]])[0]
